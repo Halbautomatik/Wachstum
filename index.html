@@ -1358,55 +1358,86 @@ const LONG_PRESS_MS=450;
 
 function attachCardInteraction(card,cat,isDone){
   let pressStart=0,pressTimer=null,moved=false,startX=0,startY=0;
+  let usingTouch=false; // flag: if touch is active, ignore mouse events entirely
 
-  function onStart(e){
+  function doToggle(){
+    if(isDone){unmark(cat.id);}
+    else{
+      markDone(cat.id);
+      card.classList.add('just-done');
+      setTimeout(()=>card.classList.remove('just-done'),400);
+      if(navigator.vibrate)navigator.vibrate(28);
+    }
+    renderHabits();
+    updateProgress();
+  }
+
+  // ── TOUCH (mobile) ──
+  card.addEventListener('touchstart',e=>{
+    usingTouch=true;
     moved=false;
-    startX=e.touches?e.touches[0].clientX:e.clientX;
-    startY=e.touches?e.touches[0].clientY:e.clientY;
+    startX=e.touches[0].clientX;
+    startY=e.touches[0].clientY;
     pressStart=Date.now();
     card.classList.add('pressing');
     pressTimer=setTimeout(()=>{
       if(!moved){card.classList.remove('pressing');openDetail(cat);}
     },LONG_PRESS_MS);
-  }
+  },{passive:true});
 
-  function onMove(e){
-    const cx=e.touches?e.touches[0].clientX:e.clientX;
-    const cy=e.touches?e.touches[0].clientY:e.clientY;
-    if(Math.abs(cx-startX)>8||Math.abs(cy-startY)>8){moved=true;clearTimeout(pressTimer);card.classList.remove('pressing');}
-  }
+  card.addEventListener('touchmove',e=>{
+    if(Math.abs(e.touches[0].clientX-startX)>8||Math.abs(e.touches[0].clientY-startY)>8){
+      moved=true;clearTimeout(pressTimer);card.classList.remove('pressing');
+    }
+  },{passive:true});
 
-  function onEnd(){
+  card.addEventListener('touchend',e=>{
+    e.preventDefault(); // prevent ghost mouse events on iOS
     clearTimeout(pressTimer);
     card.classList.remove('pressing');
     if(moved)return;
-    const dur=Date.now()-pressStart;
-    if(dur<LONG_PRESS_MS){
-      // short tap = toggle done
-      if(isDone){unmark(cat.id);}
-      else{
-        markDone(cat.id);
-        card.classList.add('just-done');
-        setTimeout(()=>card.classList.remove('just-done'),400);
-        if(navigator.vibrate)navigator.vibrate(28);
-      }
-      renderHabits();updateProgress();
+    if(Date.now()-pressStart<LONG_PRESS_MS) doToggle();
+    // reset usingTouch after a short delay
+    setTimeout(()=>{usingTouch=false;},500);
+  },{passive:false});
+
+  card.addEventListener('touchcancel',()=>{
+    clearTimeout(pressTimer);card.classList.remove('pressing');
+    setTimeout(()=>{usingTouch=false;},500);
+  });
+
+  // ── MOUSE (desktop only — skip if touch was used) ──
+  card.addEventListener('mousedown',e=>{
+    if(usingTouch)return;
+    moved=false;
+    startX=e.clientX;startY=e.clientY;
+    pressStart=Date.now();
+    card.classList.add('pressing');
+    pressTimer=setTimeout(()=>{
+      if(!moved){card.classList.remove('pressing');openDetail(cat);}
+    },LONG_PRESS_MS);
+  });
+
+  card.addEventListener('mousemove',e=>{
+    if(usingTouch)return;
+    if(Math.abs(e.clientX-startX)>8||Math.abs(e.clientY-startY)>8){
+      moved=true;clearTimeout(pressTimer);card.classList.remove('pressing');
     }
-    // long press handled in timer above
-  }
+  });
 
-  function onCancel(){clearTimeout(pressTimer);card.classList.remove('pressing');}
+  card.addEventListener('mouseup',()=>{
+    if(usingTouch)return;
+    clearTimeout(pressTimer);
+    card.classList.remove('pressing');
+    if(moved)return;
+    if(Date.now()-pressStart<LONG_PRESS_MS) doToggle();
+  });
 
-  // Touch events (mobile)
-  card.addEventListener('touchstart',onStart,{passive:true});
-  card.addEventListener('touchmove',onMove,{passive:true});
-  card.addEventListener('touchend',onEnd);
-  card.addEventListener('touchcancel',onCancel);
-  // Mouse events (desktop)
-  card.addEventListener('mousedown',onStart);
-  card.addEventListener('mousemove',onMove);
-  card.addEventListener('mouseup',onEnd);
-  card.addEventListener('mouseleave',onCancel);
+  card.addEventListener('mouseleave',()=>{
+    if(usingTouch)return;
+    clearTimeout(pressTimer);card.classList.remove('pressing');
+  });
+
   card.addEventListener('contextmenu',e=>e.preventDefault());
 }
 
