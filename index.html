@@ -1351,59 +1351,63 @@ Regeln: Max 2 Sätze. Du-Form. Sofort heute umsetzbar. Auf seine Situation zuges
 
 // ══════════════════════════════════
 // Touch/click handler — iOS-safe
+// Short tap anywhere on card OR on check circle = toggle
+// Long press on card = open detail
 // ══════════════════════════════════
 const LONG_PRESS_MS=450;
 
 function attachCardInteraction(card,cat,isDone){
   let pressTimer=null,moved=false,startX=0,startY=0,pressStart=0;
+  let tapped=false; // prevent double-fire
 
   function doToggle(){
-    // 1. Update state immediately
+    if(tapped)return; tapped=true;
+    setTimeout(()=>{tapped=false;},600);
     if(isDone){ unmark(cat.id); }
     else { markDone(cat.id); if(navigator.vibrate)navigator.vibrate(28); }
-    // 2. Re-render on next tick — avoids stale DOM reference crash
     requestAnimationFrame(()=>{ renderHabits(); updateProgress(); });
   }
 
-  function onTouchStart(e){
+  // ── Simple click handler (works on all platforms) ──
+  // This fires reliably on both iOS Safari and Android Chrome
+  // We use it as the PRIMARY mechanism for toggling
+  card.addEventListener('click', e=>{
+    // If this was a long press (detail opened), don't toggle
+    if(pressTimer===null&&Date.now()-pressStart>LONG_PRESS_MS)return;
+    doToggle();
+  });
+
+  // ── Long press detection via touchstart/touchend ──
+  card.addEventListener('touchstart',e=>{
     moved=false;
     pressStart=Date.now();
     startX=e.touches[0].clientX;
     startY=e.touches[0].clientY;
-    card.classList.add('pressing');
     pressTimer=setTimeout(()=>{
-      if(!moved){ card.classList.remove('pressing'); openDetail(cat); }
+      pressTimer=null;
+      if(!moved){ openDetail(cat); }
     },LONG_PRESS_MS);
-  }
+  },{passive:true});
 
-  function onTouchMove(e){
+  card.addEventListener('touchmove',e=>{
     if(Math.abs(e.touches[0].clientX-startX)>10||Math.abs(e.touches[0].clientY-startY)>10){
-      moved=true; clearTimeout(pressTimer); card.classList.remove('pressing');
+      moved=true; clearTimeout(pressTimer); pressTimer=null;
     }
-  }
+  },{passive:true});
 
-  function onTouchEnd(e){
-    clearTimeout(pressTimer);
-    card.classList.remove('pressing');
-    if(moved)return;
-    const elapsed=Date.now()-pressStart;
-    if(elapsed<LONG_PRESS_MS){
-      e.preventDefault(); // block ghost clicks — must be non-passive
-      doToggle();
+  card.addEventListener('touchend',e=>{
+    // If long press timer already fired (detail opened), cancel click
+    if(pressTimer===null&&Date.now()-pressStart>=LONG_PRESS_MS){
+      e.preventDefault();
+      return;
     }
-  }
+    clearTimeout(pressTimer); pressTimer=null;
+    // Let the click event fire naturally — don't call doToggle() here
+    // to avoid double-firing on iOS (touchend + click both fire)
+  },{passive:false});
 
-  // passive:false on BOTH touchstart and touchend so preventDefault works
-  card.addEventListener('touchstart', onTouchStart, {passive:false});
-  card.addEventListener('touchmove',  onTouchMove,  {passive:true});
-  card.addEventListener('touchend',   onTouchEnd,   {passive:false});
-  card.addEventListener('touchcancel',()=>{ clearTimeout(pressTimer); card.classList.remove('pressing'); });
-
-  // Mouse (desktop) — only fires on non-touch devices
-  card.addEventListener('click', e=>{
-    // On touch devices, click fires after touchend — skip it
-    if(e.sourceCapabilities&&e.sourceCapabilities.firesTouchEvents)return;
-    doToggle();
+  card.addEventListener('touchcancel',()=>{
+    clearTimeout(pressTimer); pressTimer=null;
   });
 
   card.addEventListener('contextmenu',e=>e.preventDefault());
