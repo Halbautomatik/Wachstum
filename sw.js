@@ -1,5 +1,5 @@
-// WACHSTUM Service Worker — v10 Final
-const CACHE_NAME = 'wachstum-v10';
+// WACHSTUM Service Worker — v11
+const CACHE_NAME = 'wachstum-v11';
 const CORE_ASSETS = ['./', './index.html'];
 
 // Install: cache core assets

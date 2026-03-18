@@ -1363,14 +1363,34 @@ function attachCardInteraction(card, cat, isDone) {
   let startX = 0, startY = 0, didMove = false;
 
   function toggle() {
+    // 1. Update state
     if (isDone) {
       unmark(cat.id);
     } else {
       markDone(cat.id);
       if (navigator.vibrate) navigator.vibrate(30);
     }
-    // Small delay so markDone is fully written before re-read
-    setTimeout(() => { renderHabits(); updateProgress(); }, 50);
+    // 2. Immediately update THIS card visually (don't wait for full re-render)
+    const newIsDone = !isDone;
+    if (newIsDone) {
+      card.classList.add('done');
+      card.querySelector('.hcard-title').textContent = '✓ Erledigt';
+      card.querySelector('.hcard-hint').textContent = 'Nochmal tippen zum Rückgängig';
+      const chk = card.querySelector('.hcard-check');
+      if (chk) { chk.style.background = 'var(--green)'; chk.style.borderColor = 'var(--green)'; }
+      const svg = card.querySelector('.check-svg');
+      if (svg) svg.style.display = 'block';
+    } else {
+      card.classList.remove('done');
+      card.querySelector('.hcard-title').textContent = getShortTitle(cat.id);
+      card.querySelector('.hcard-hint').textContent = 'Tippen = erledigt · Halten = Details';
+      const chk = card.querySelector('.hcard-check');
+      if (chk) { chk.style.background = ''; chk.style.borderColor = ''; }
+      const svg = card.querySelector('.check-svg');
+      if (svg) svg.style.display = '';
+    }
+    // 3. Full re-render after short delay (updates progress bar, streak etc.)
+    setTimeout(() => { renderHabits(); updateProgress(); }, 100);
   }
 
   card.addEventListener('touchstart', e => {
@@ -1378,7 +1398,6 @@ function attachCardInteraction(card, cat, isDone) {
     didMove = false;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
-
     timer = setTimeout(() => {
       isLongPress = true;
       openDetail(cat);
@@ -1396,19 +1415,16 @@ function attachCardInteraction(card, cat, isDone) {
 
   card.addEventListener('touchend', () => {
     clearTimeout(timer);
-    if (!didMove && !isLongPress) {
-      toggle();
-    }
+    if (!didMove && !isLongPress) toggle();
   });
 
-  card.addEventListener('touchcancel', () => {
-    clearTimeout(timer);
-  });
+  card.addEventListener('touchcancel', () => { clearTimeout(timer); });
 
-  // Desktop fallback
+  // Desktop mouse fallback
   card.addEventListener('mouseup', e => {
     if (e.button !== 0) return;
-    toggle();
+    // Only fire on desktop (no touch support)
+    if (!window.matchMedia('(hover: none)').matches) toggle();
   });
 
   card.addEventListener('contextmenu', e => e.preventDefault());
