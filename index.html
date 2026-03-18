@@ -1350,92 +1350,60 @@ Regeln: Max 2 Sätze. Du-Form. Sofort heute umsetzbar. Auf seine Situation zuges
 }
 
 // ══════════════════════════════════
-// FIX 1: Robust touch handling
-// Uses touchstart/touchend with fallback to mousedown/mouseup
-// Long press = 450ms, short tap = toggle done
+// Touch/click handler — iOS-safe
 // ══════════════════════════════════
 const LONG_PRESS_MS=450;
 
 function attachCardInteraction(card,cat,isDone){
-  let pressStart=0,pressTimer=null,moved=false,startX=0,startY=0;
-  let usingTouch=false; // flag: if touch is active, ignore mouse events entirely
+  let pressTimer=null,moved=false,startX=0,startY=0,pressStart=0;
 
   function doToggle(){
-    if(isDone){unmark(cat.id);}
-    else{
-      markDone(cat.id);
-      card.classList.add('just-done');
-      setTimeout(()=>card.classList.remove('just-done'),400);
-      if(navigator.vibrate)navigator.vibrate(28);
-    }
-    renderHabits();
-    updateProgress();
+    // 1. Update state immediately
+    if(isDone){ unmark(cat.id); }
+    else { markDone(cat.id); if(navigator.vibrate)navigator.vibrate(28); }
+    // 2. Re-render on next tick — avoids stale DOM reference crash
+    requestAnimationFrame(()=>{ renderHabits(); updateProgress(); });
   }
 
-  // ── TOUCH (mobile) ──
-  card.addEventListener('touchstart',e=>{
-    usingTouch=true;
+  function onTouchStart(e){
     moved=false;
+    pressStart=Date.now();
     startX=e.touches[0].clientX;
     startY=e.touches[0].clientY;
-    pressStart=Date.now();
     card.classList.add('pressing');
     pressTimer=setTimeout(()=>{
-      if(!moved){card.classList.remove('pressing');openDetail(cat);}
+      if(!moved){ card.classList.remove('pressing'); openDetail(cat); }
     },LONG_PRESS_MS);
-  },{passive:true});
+  }
 
-  card.addEventListener('touchmove',e=>{
-    if(Math.abs(e.touches[0].clientX-startX)>8||Math.abs(e.touches[0].clientY-startY)>8){
-      moved=true;clearTimeout(pressTimer);card.classList.remove('pressing');
+  function onTouchMove(e){
+    if(Math.abs(e.touches[0].clientX-startX)>10||Math.abs(e.touches[0].clientY-startY)>10){
+      moved=true; clearTimeout(pressTimer); card.classList.remove('pressing');
     }
-  },{passive:true});
+  }
 
-  card.addEventListener('touchend',e=>{
-    e.preventDefault(); // prevent ghost mouse events on iOS
+  function onTouchEnd(e){
     clearTimeout(pressTimer);
     card.classList.remove('pressing');
     if(moved)return;
-    if(Date.now()-pressStart<LONG_PRESS_MS) doToggle();
-    // reset usingTouch after a short delay
-    setTimeout(()=>{usingTouch=false;},500);
-  },{passive:false});
-
-  card.addEventListener('touchcancel',()=>{
-    clearTimeout(pressTimer);card.classList.remove('pressing');
-    setTimeout(()=>{usingTouch=false;},500);
-  });
-
-  // ── MOUSE (desktop only — skip if touch was used) ──
-  card.addEventListener('mousedown',e=>{
-    if(usingTouch)return;
-    moved=false;
-    startX=e.clientX;startY=e.clientY;
-    pressStart=Date.now();
-    card.classList.add('pressing');
-    pressTimer=setTimeout(()=>{
-      if(!moved){card.classList.remove('pressing');openDetail(cat);}
-    },LONG_PRESS_MS);
-  });
-
-  card.addEventListener('mousemove',e=>{
-    if(usingTouch)return;
-    if(Math.abs(e.clientX-startX)>8||Math.abs(e.clientY-startY)>8){
-      moved=true;clearTimeout(pressTimer);card.classList.remove('pressing');
+    const elapsed=Date.now()-pressStart;
+    if(elapsed<LONG_PRESS_MS){
+      e.preventDefault(); // block ghost clicks — must be non-passive
+      doToggle();
     }
-  });
+  }
 
-  card.addEventListener('mouseup',()=>{
-    if(usingTouch)return;
-    clearTimeout(pressTimer);
-    card.classList.remove('pressing');
-    if(moved)return;
-    if(Date.now()-pressStart<LONG_PRESS_MS) doToggle();
-  });
+  // passive:false on BOTH touchstart and touchend so preventDefault works
+  card.addEventListener('touchstart', onTouchStart, {passive:false});
+  card.addEventListener('touchmove',  onTouchMove,  {passive:true});
+  card.addEventListener('touchend',   onTouchEnd,   {passive:false});
+  card.addEventListener('touchcancel',()=>{ clearTimeout(pressTimer); card.classList.remove('pressing'); });
 
-  card.addEventListener('mouseleave',()=>{
-    if(usingTouch)return;
-    clearTimeout(pressTimer);card.classList.remove('pressing');
+  // Mouse (desktop) — only fires on non-touch devices
+  card.addEventListener('click', e=>{
+    // On touch devices, click fires after touchend — skip it
+    if(e.sourceCapabilities&&e.sourceCapabilities.firesTouchEvents)return;
+    doToggle();
   });
 
   card.addEventListener('contextmenu',e=>e.preventDefault());
